@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Temporary Bus Pass — Transport Dept</title>
+  <style>
+    /* Small, clean styles for single-file app */
+    :root{--brand:#0b74de;--muted:#666}
+    body{font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;margin:0;background:#f7f9fc;color:#111}
+    .container{max-width:980px;margin:28px auto;padding:18px}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 6px 18px rgba(20,30,50,0.06);margin-bottom:14px}
+    label{display:block;font-size:13px;margin-bottom:6px;color:var(--muted)}
+    input,select,textarea{width:100%;padding:10px;border:1px solid #e6eef9;border-radius:8px;margin-bottom:12px;font-size:14px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .btn{background:var(--brand);color:#fff;padding:10px 12px;border:none;border-radius:8px;cursor:pointer}
+    .btn.ghost{background:transparent;color:var(--brand);border:1px solid #e6eef9}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid #f0f3f8;text-align:left}
+    .status-pending{color:#b8860b}
+    .status-approved{color:green}
+    .status-rejected{color:red}
+    .small{font-size:13px;color:#666}
+    .controls{display:flex;gap:8px}
+    .hint{font-size:12px;color:#666;margin-top:6px}
+    .link-like{color:var(--brand);cursor:pointer;text-decoration:underline}
+    .top-actions{display:flex;gap:8px}
+    @media (max-width:720px){.row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Temporary Bus Pass — Transport Dept</h1>
+      <div class="top-actions">
+        <button id="adminBtn" class="btn ghost">Admin Login</button>
+        <button id="statusBtn" class="btn ghost">Check Status</button>
+      </div>
+    </header>
+
+    <!-- ====== USER FORM ====== -->
+    <div class="card" id="userFormCard">
+      <h2 style="margin-top:0;margin-bottom:8px">Apply for Temporary Bus Pass</h2>
+      <form id="passForm" onsubmit="submitForm(event)">
+        <div class="row">
+          <div>
+            <label>Applicant name</label>
+            <input id="applicantName" required />
+          </div>
+          <div>
+            <label>Applicant phone (WhatsApp number with country code, e.g. 9198...)</label>
+            <input id="applicantPhone" placeholder="optional but recommended" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Date of travel</label>
+            <input type="date" id="travelDate" required />
+          </div>
+          <div>
+            <label>Ticket no</label>
+            <input id="ticketNo" required />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Bus route no</label>
+            <input id="routeNo" required />
+          </div>
+          <div>
+            <label>Bus route name</label>
+            <input id="routeName" required />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Shift</label>
+            <select id="shift" required>
+              <option value="">Select shift</option>
+              <option>Morning</option>
+              <option>Afternoon</option>
+              <option>Evening</option>
+              <option>Night</option>
+            </select>
+          </div>
+          <div>
+            <label>Allow name / Allowed person</label>
+            <input id="allowName" placeholder="Name allowed to travel" />
+          </div>
+        </div>
+
+        <div>
+          <label>Travel by your bus on (extra info)</label>
+          <input id="travelBy" placeholder="e.g. Route X Bus no 123" />
+        </div>
+
+        <div>
+          <label>Notes (optional)</label>
+          <textarea id="notes" rows="3"></textarea>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" type="submit">Submit application</button>
+          <div id="submitMsg" class="small"></div>
+        </div>
+      </form>
+      <p class="hint">When you submit the form it will be stored in Firebase Realtime Database with status <strong>pending</strong>. Admin can approve or reject. When admin approves, they can tap the WhatsApp button to send a notification to the department's WhatsApp and (optionally) to the applicant.</p>
+    </div>
+
+    <!-- ====== ADMIN PANEL ====== -->
+    <div class="card" id="adminCard" style="display:none">
+      <h2 style="margin-top:0">Admin Panel</h2>
+      <div style="margin-bottom:10px">
+        <label>Admin password</label>
+        <input id="adminPwd" type="password" placeholder="Enter admin password" />
+        <button class="btn ghost" onclick="tryAdminLogin()">Login</button>
+        <span class="small">(default password in this demo: <code>admin123</code> — change it before production)</span>
+      </div>
+
+      <div id="adminControls" style="display:none">
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+          <label style="min-width:140px">Admin WhatsApp number</label>
+          <input id="adminWhatsApp" placeholder="919xxxxxxxx" style="max-width:260px" />
+          <button class="btn" onclick="saveAdminNumber()">Save</button>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <label>Filter</label>
+          <select id="filterStatus" onchange="renderList()">
+            <option value="all">All</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+
+        <div id="submissionsList">
+          <!-- table injected here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== STATUS CHECK ====== -->
+    <div class="card" id="statusCard" style="display:none">
+      <h2 style="margin-top:0">Check Application Status</h2>
+      <p class="small">Enter Ticket no to check whether your pass is approved or rejected.</p>
+      <div style="display:flex;gap:8px">
+        <input id="statusTicketNo" placeholder="Ticket no" />
+        <button class="btn" onclick="checkStatus()">Check</button>
+      </div>
+      <div id="statusResult" style="margin-top:12px"></div>
+    </div>
+
+    <footer style="margin-top:18px;text-align:center;color:#888;font-size:13px">This is a demo single-file app. Replace the Firebase config and set adminWhatsApp to enable notifications. For automated WhatsApp (no clicks), you need a server + WhatsApp Business API (not included).</footer>
+  </div>
+
+  <!-- ====== SCRIPTS ====== -->
+  <!-- Firebase (compat) SDK for Realtime DB - simple for single-file demo -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <script>
+    /***** CONFIGURE THESE VALUES BEFORE USE *****/
+    // 1) Replace firebaseConfig with your Realtime Database project's config
+    //    (from Firebase console -> project settings -> SDK snippet -> Config)
+    const firebaseConfig = {
+      apiKey: "AIzaSyAplJZzrEOV244rGi1hBe-MWNKdC21C0Ac",
+  authDomain: "newdb-9bb7d.firebaseapp.com",
+  databaseURL: "https://newdb-9bb7d-default-rtdb.firebaseio.com",
+  projectId: "newdb-9bb7d",
+  storageBucket: "newdb-9bb7d.firebasestorage.app",
+  messagingSenderId: "43095744350",
+  appId: "1:43095744350:web:b5799aef815d5a8cb539cf",
+  measurementId: "G-50NM4XY0F6"
+    };
+
+    // 2) For quick demo notifications: put your admin WhatsApp number here (country code + number, no +)
+    // e.g. '919876543210' for India. Admin can also set this in the Admin Panel UI.
+    const DEFAULT_ADMIN_WHATSAPP = '';
+
+    // 3) Simple admin password for this demo. Change before production.
+    const ADMIN_PASSWORD = 'admin123';
+    /*******************************************/
+
+    // Initialize firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Basic helpers
+    const $ = id => document.getElementById(id);
+
+    // Save default admin number to localStorage
+    function saveAdminNumber(){
+      const n = $('adminWhatsApp').value.trim();
+      localStorage.setItem('adminWhatsApp', n);
+      alert('Admin WhatsApp saved');
+    }
+
+    // Submit user form
+    async function submitForm(e){
+      e && e.preventDefault();
+      const payload = {
+        applicantName: $('applicantName').value.trim(),
+        applicantPhone: $('applicantPhone').value.trim(),
+        travelDate: $('travelDate').value,
+        ticketNo: $('ticketNo').value.trim(),
+        routeNo: $('routeNo').value.trim(),
+        routeName: $('routeName').value.trim(),
+        shift: $('shift').value,
+        allowName: $('allowName').value.trim(),
+        travelBy: $('travelBy').value.trim(),
+        notes: $('notes').value.trim(),
+        status: 'pending',
+        createdAt: Date.now()
+      };
+
+      try{
+        const newRef = await db.ref('passes').push(payload);
+        $('submitMsg').textContent = 'Application submitted. Your reference id: ' + newRef.key;
+        // Clear form except ticketNo to help user
+        //document.getElementById('passForm').reset();
+      }catch(err){
+        console.error(err);
+        $('submitMsg').textContent = 'Error saving application. Check console.';
+      }
+    }
+
+    // Admin login
+    function tryAdminLogin(){
+      const p = $('adminPwd').value;
+      if(p === ADMIN_PASSWORD){
+        $('adminControls').style.display = 'block';
+        $('adminCard').scrollIntoView({behavior:'smooth'});
+        $('adminWhatsApp').value = localStorage.getItem('adminWhatsApp') || DEFAULT_ADMIN_WHATSAPP;
+        startListeningSubmissions();
+      } else alert('Wrong password');
+    }
+
+    // Listen for submissions and render
+    let submissionsCache = {};
+    function startListeningSubmissions(){
+      const ref = db.ref('passes');
+      ref.off();
+      ref.on('value', snap => {
+        const data = snap.val() || {};
+        submissionsCache = data;
+        renderList();
+      });
+    }
+
+    function renderList(){
+      const container = $('submissionsList');
+      const filter = $('filterStatus').value;
+      const rows = Object.keys(submissionsCache).map(key => ({id:key, ...submissionsCache[key]}));
+      const filtered = rows.filter(r => filter === 'all' ? true : (r.status === filter));
+
+      if(filtered.length === 0){ container.innerHTML = '<div class="small">No submissions yet.</div>'; return; }
+
+      let html = '<table><thead><tr><th>Ticket</th><th>Name</th><th>Route</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+      for(const r of filtered){
+        html += `<tr>
+          <td>${escapeHtml(r.ticketNo||'')}</td>
+          <td>${escapeHtml(r.applicantName||'')}</td>
+          <td>${escapeHtml((r.routeNo||'') + ' — ' + (r.routeName||''))}</td>
+          <td>${r.travelDate||''}</td>
+          <td class="status-${r.status}">${r.status}</td>
+          <td>
+            <div class="controls">
+              <button class="btn ghost" onclick="viewDetails('${r.id}')">View</button>
+              ${r.status === 'pending' ? `<button class=\"btn\" onclick=\"approve('${r.id}')\">Approve</button><button class=\"btn ghost\" onclick=\"reject('${r.id}')\">Reject</button>` : ''}
+            </div>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    // View details popup (simple alert for demo)
+    function viewDetails(id){
+      const r = submissionsCache[id];
+      if(!r) return alert('Not found');
+      const s = `Ticket: ${r.ticketNo}\nName: ${r.applicantName}\nPhone: ${r.applicantPhone}\nRoute: ${r.routeNo} - ${r.routeName}\nDate: ${r.travelDate}\nShift: ${r.shift}\nAllowed: ${r.allowName}\nNotes: ${r.notes}\nStatus: ${r.status}`;
+      alert(s);
+    }
+
+    // Approve
+    async function approve(id){
+      if(!confirm('Approve this application?')) return;
+      try{
+        await db.ref('passes/' + id).update({status:'approved', updatedAt: Date.now()});
+        // Open WhatsApp prefilled message to admin to notify (requires admin to press send)
+        const adminNumber = localStorage.getItem('adminWhatsApp') || DEFAULT_ADMIN_WHATSAPP;
+        const r = submissionsCache[id];
+        const msg = buildMessage(r, 'approved');
+        if(adminNumber) openWhatsApp(adminNumber, msg);
+        // Also open WhatsApp to applicant if phone present
+        if(r.applicantPhone) openWhatsApp(r.applicantPhone, `Your application for ticket ${r.ticketNo} is APPROVED.\n${shortSummary(r)}`);
+        renderList();
+      }catch(err){console.error(err); alert('Error approving');}
+    }
+
+    // Reject
+    async function reject(id){
+      const reason = prompt('Reason for rejection (optional)');
+      try{
+        await db.ref('passes/' + id).update({status:'rejected', rejectionReason: reason||'', updatedAt: Date.now()});
+        const adminNumber = localStorage.getItem('adminWhatsApp') || DEFAULT_ADMIN_WHATSAPP;
+        const r = submissionsCache[id];
+        const msg = buildMessage(r, 'rejected', reason);
+        if(adminNumber) openWhatsApp(adminNumber, msg);
+        if(r.applicantPhone) openWhatsApp(r.applicantPhone, `Your application for ticket ${r.ticketNo} is REJECTED. ${reason?('\nReason: '+reason):''}`);
+        renderList();
+      }catch(err){console.error(err); alert('Error rejecting');}
+    }
+
+    // Build short message
+    function buildMessage(r, status, extra){
+      return `Application ${status.toUpperCase()}\nTicket: ${r.ticketNo}\nName: ${r.applicantName}\nRoute: ${r.routeNo} - ${r.routeName}\nDate: ${r.travelDate}${extra?('\nNote: '+extra):''}`;
+    }
+    function shortSummary(r){
+      return `Route: ${r.routeNo} - ${r.routeName}. Date: ${r.travelDate}. Ticket: ${r.ticketNo}`;
+    }
+
+    // Open WhatsApp chat with prefilled text using wa.me — user must press send (no automatic sending)
+    function openWhatsApp(number, message){
+      const encoded = encodeURIComponent(message);
+      const url = `https://wa.me/${number}?text=${encoded}`;
+      window.open(url, '_blank');
+    }
+
+    // Status check by ticket no
+    async function checkStatus(){
+      const t = $('statusTicketNo').value.trim();
+      if(!t) return alert('Enter ticket no');
+      const snap = await db.ref('passes').orderByChild('ticketNo').equalTo(t).once('value');
+      const v = snap.val();
+      if(!v){ $('statusResult').innerHTML = '<div class="small">No application found with that ticket no</div>'; return; }
+      const keys = Object.keys(v);
+      const r = v[keys[0]];
+      $('statusResult').innerHTML = `<div><strong>Status:</strong> <span class="status-${r.status}">${r.status}</span></div>
+        <div class="small">${escapeHtml(shortSummary(r))}${r.rejectionReason ? '<div><strong>Reason:</strong> '+escapeHtml(r.rejectionReason)+'</div>':''}</div>`;
+    }
+
+    // Helpers
+    function escapeHtml(s){ if(!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // UI toggles
+    $('adminBtn').addEventListener('click', ()=>{
+      const shown = $('adminCard').style.display !== 'none';
+      $('adminCard').style.display = shown ? 'none' : 'block';
+      if(!shown) window.scrollTo({top:0,behavior:'smooth'});
+    });
+    $('statusBtn').addEventListener('click', ()=>{
+      const shown = $('statusCard').style.display !== 'none';
+      $('statusCard').style.display = shown ? 'none' : 'block';
+      if(!shown) window.scrollTo({top:0,behavior:'smooth'});
+    });
+
+    // When page loads set default admin number
+    window.addEventListener('load', ()=>{
+      if(!localStorage.getItem('adminWhatsApp') && DEFAULT_ADMIN_WHATSAPP) localStorage.setItem('adminWhatsApp', DEFAULT_ADMIN_WHATSAPP);
+    });
+
+    // NOTE for production / automation:
+    // - The wa.me approach opens a chat in browser / WhatsApp app and requires the admin to press Send.
+    // - To send messages automatically (no click), you need a server + WhatsApp Business Cloud API or Twilio API (requires credentials and a backend). Do not store those credentials in client-side JS.
+    // - Secure admin access: replace the simple password with Firebase Auth + rules that restrict reads/writes.
+    // - Validate and sanitize inputs and consider rate-limiting to avoid spam.
+  </script>
+</body>
+</html>
